@@ -1,16 +1,20 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, X, SkipBack, SkipForward, Loader2, FastForward, Rewind } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, X, SkipBack, SkipForward, Loader2, FastForward, Rewind, ExternalLink, Copy, Film } from 'lucide-react';
 import { useVideoPlayer } from '@/hooks/useVideoPlayer';
 import { usePlaylist } from '@/contexts/PlaylistContext';
 import { useFavorites } from '@/contexts/FavoritesContext';
+import { normalizeRedundantPort } from '@/utils/streamProxy';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 
 export function WatchPage() {
   const { channelId } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
   const { getChannelById, getSeriesByName } = usePlaylist();
   const { addToHistory } = useFavorites();
+  const { toast } = useToast();
 
   const channel = channelId ? getChannelById(channelId) : null;
   const [showControls, setShowControls] = useState(true);
@@ -34,6 +38,44 @@ export function WatchPage() {
     seekForward,
     seekBackward,
   } = useVideoPlayer(channel?.url || '');
+
+  // URL DIRETA do vídeo (sem proxy nenhum) — é a única que funciona (IP residencial)
+  const directUrl = useMemo(() => {
+    if (!channel?.url) return '';
+    // Remove porta :80 / :443 redundante (se a URL tiver)
+    return normalizeRedundantPort(channel.url);
+  }, [channel]);
+
+  // VLC protocol (URI handler para abrir direto no VLC desktop)
+  const vlcUrl = useMemo(() => {
+    if (!directUrl) return '';
+    return 'vlc://' + directUrl.replace(/^https?:\/\//i, '');
+  }, [directUrl]);
+
+  const handleCopyUrl = useCallback(() => {
+    if (!directUrl) return;
+    try {
+      navigator.clipboard.writeText(directUrl);
+      toast({ title: 'URL copiada!', description: 'Cole no VLC ou no navegador.' });
+    } catch {
+      toast({ title: 'Erro ao copiar', variant: 'destructive' });
+    }
+  }, [directUrl, toast]);
+
+  const handleOpenNewTab = useCallback(() => {
+    if (!directUrl) return;
+    // Top-level navigation: navegador NÃO bloqueia Mixed Content aqui, funciona 100%
+    window.open(directUrl, '_blank', 'noopener,noreferrer');
+  }, [directUrl]);
+
+  const handleOpenVlc = useCallback(() => {
+    if (!vlcUrl) return;
+    try {
+      window.location.href = vlcUrl;
+    } catch {
+      handleCopyUrl();
+    }
+  }, [vlcUrl, handleCopyUrl]);
 
   // Calculate next episode
   const nextEpisode = useMemo(() => {
@@ -148,10 +190,37 @@ export function WatchPage() {
       )}
 
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-          <div className="text-center">
-            <p className="text-destructive mb-4">{error}</p>
-            <button onClick={() => navigate(-1)} className="btn-primary-gradient px-6 py-2">Voltar</button>
+        <div className="absolute inset-0 flex items-center justify-center bg-black/85 z-10" onClick={(e) => e.stopPropagation()}>
+          <div className="text-center max-w-md px-6 space-y-5">
+            <div className="mb-2">
+              <Film className="w-14 h-14 text-destructive mx-auto mb-3" />
+              <p className="text-destructive font-semibold mb-1">Provedor bloqueou proxy de vídeo</p>
+              <p className="text-sm text-muted-foreground">
+                IPs de servidores (Cloudflare, proxies) são bloqueados no endpoint de vídeo.
+                Use teu IP residencial através de uma das opções abaixo — funciona 100%.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 w-full">
+              <Button onClick={handleOpenNewTab} className="w-full h-12 btn-primary-gradient text-base">
+                <ExternalLink className="w-5 h-5 mr-2" />
+                ▶️ Abrir em Nova Aba (recomendado)
+              </Button>
+              <Button variant="outline" onClick={handleOpenVlc} className="w-full h-12 border-orange-500/30 text-orange-400 hover:bg-orange-500/10 hover:text-orange-300">
+                <Film className="w-5 h-5 mr-2" />
+                🎬 Abrir no VLC (desktop)
+              </Button>
+              <Button variant="secondary" onClick={handleCopyUrl} className="w-full h-12">
+                <Copy className="w-5 h-5 mr-2" />
+                📋 Copiar URL (para colar onde quiser)
+              </Button>
+            </div>
+
+            <div className="pt-2">
+              <button onClick={() => navigate(-1)} className="px-6 py-2 rounded-full border border-border hover:bg-white/5 text-sm text-muted-foreground transition-colors">
+                ← Voltar
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -206,3 +275,4 @@ export function WatchPage() {
     </div>
   );
 }
+

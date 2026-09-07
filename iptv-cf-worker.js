@@ -43,7 +43,7 @@ export default {
       return plain(400, 'URL inválida passada em ?url=');
     }
 
-    // ---- Remove porta redundante :80/:443 (nginx do p1fast bloqueia Host com porta explícita -> erro 1003)
+    // ---- Remove porta redundante :80/:443 (alguns upstream bloqueiam Host c/ porta explícita)
     if (
       (parsedTarget.protocol === 'http:' && parsedTarget.port === '80') ||
       (parsedTarget.protocol === 'https:' && parsedTarget.port === '443')
@@ -51,36 +51,82 @@ export default {
       parsedTarget.port = '';
     }
 
-    // Constrói headers do upstream
+    const isPlaylist = looksLikeM3U8(parsedTarget.pathname, request.headers.get('Accept') || '');
+
+    // Constrói headers do upstream REPLICANDO O QUE O NAVEGADOR FARIA SE COLASSE A URL DIRETO.
+    // O motivo do 403 em vídeos era os headers artificiais (Referer/Origin/Host explícito de player de nós setávamos.
+    // Agora o único header "forjado" é APENAS o User-Agent navegador desktop padrão.
+    // Vídeos e binários: enviamos Accept padrão (do navegador, sem headers supérfluos).
+    // Playlists M3U: aceitam o spoof leve pq o get.php bloqueia de vez enquando VLC/Kodi aceita só spoof.
     const upstream = new Headers();
     const range = request.headers.get('Range');
     if (range) upstream.set('Range', range);
-    const accept = request.headers.get('Accept');
-    upstream.set('Accept', accept || '*/*');
-    upstream.set('User-Agent', pickByExt(parsedTarget.pathname, UA_VLC, UA_KODI));
 
-    try {
-      const origin = parsedTarget.origin;
-      upstream.set('Referer', origin + '/');
-      upstream.set('Origin', origin);
-      upstream.set('Host', parsedTarget.hostname);
-    } catch {}
-
-    const isPlaylist = looksLikeM3U8(parsedTarget.pathname, request.headers.get('Accept') || '');
+    if (isPlaylist) {
+      const accept = request.headers.get('Accept');
+      upstream.set('Accept', accept || '*/*');
+      upstream.set('User-Agent', pickByExt(parsedTarget.pathname, UA_VLC, UA_KODI));
+      try {
+        const origin = parsedTarget.origin;
+        upstream.set('Referer', origin + '/');
+        upstream.set('Origin', origin);
+      } catch {}
+    } else {
+      // VÍDEO/MP4/TS: headers idênticos a quando tu cola a URL direto no navegador
+      const acceptVid = request.headers.get('Accept');
+      upstream.set('Accept', acceptVid || 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5');
+      upstream.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
+      // NÃO enviamos Referer, NÃO enviamos Origin, NÃO enviamos Host explicito — igual navegador
+      var chUA = request.headers.get('Sec-CH-UA');
+      if (chUA) upstream.set('Sec-CH-UA', chUA);
+      var chUAM = request.headers.get('Sec-CH-UA-Mobile');
+      if (chUAM) upstream.set('Sec-CH-UA-Mobile', chUAM);
+      var chUAP = request.headers.get('Sec-CH-UA-Platform');
+      if (chUAP) upstream.set('Sec-CH-UA-Platform', chUAP);
+      upstream.set('sec-fetch-site', 'none');
+      upstream.set('sec-fetch-mode', 'navigate');
+      upstream.set('sec-fetch-user', '?1');
+      upstream.set('sec-fetch-dest', 'video');
+    }
 
     const upstreamRequest = new Request(parsedTarget.toString(), {
       method: request.method,
       headers: upstream,
       // Não espalha cookies/credentials do navegador do usuário
       credentials: 'omit',
+      // Desliga cache do Cloudflare — cacheamento do CF introduziu bloqueio 403 em vídeos
       cf: {
-        // Não cacheia playlists M3U8 (mudam a cada refresh); só segmentos de vídeo
-        cacheTtl: isPlaylist ? 1 : 3600,
-        cacheEverything: !isPlaylist,
+        cacheTtl: 0,
+        cacheEverything: false,
       },
     });
 
-    const response = await fetch(upstreamRequest);
+    // ---- 1ª tentativa: headers normais (acima)
+    let response = await fetch(upstreamRequest);
+
+    // ---- Fallback: se der 403 (provedor bloqueou), retenta com headers MÍNIMOS
+    // (idênticos a colar a URL direto na barra do Chrome: só UA + Accept, nada mais)
+    if (response.status === 403 || response.status === 401 || response.status === 1003) {
+      try {
+        const minimal = new Headers();
+        if (range) minimal.set('Range', range);
+        minimal.set('Accept', request.headers.get('Accept') || '*/*');
+        minimal.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
+        const retryReq = new Request(parsedTarget.toString(), {
+          method: request.method,
+          headers: minimal,
+          credentials: 'omit',
+          redirect: 'follow',
+          cf: { cacheTtl: 0, cacheEverything: false },
+        });
+        const r2 = await fetch(retryReq);
+        // Só sobrescreve se for MELHOR status que 403
+        if (r2.status !== 403 && r2.status !== 401 && r2.status !== 1003) {
+          response = r2;
+        }
+      } catch { /* ignora, usa a response original */ }
+    }
+
     const outHeaders = new Headers(response.headers);
 
     // ---- Playlist (.m3u8) REESCREVE TODAS AS URLs INTERNAS

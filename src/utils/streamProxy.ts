@@ -8,7 +8,7 @@ export function needsStreamProxy(url: string): boolean {
   return /^http:\/\//i.test(url);
 }
 
-function normalizeRedundantPort(u: string): string {
+export function normalizeRedundantPort(u: string): string {
   // p1fast.com:80 bloqueia em alguns nginx com Host: dominio:80. Removemos porta redundante.
   try {
     const p = new URL(u);

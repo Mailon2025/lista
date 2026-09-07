@@ -172,46 +172,21 @@ async function retryDirectStreamAsFetch(
   setError: (v: string | null) => void,
   _isHls: boolean
 ) {
+  // --- IMPORTANTE ---
+  // Provedor p1fast BLOQUEIA IPs de data center (Cloudflare Workers, proxies públicos, VPNs de DC).
+  // Qualquer tentativa de fetch por proxy retorna erro 1003/403.
+  // A única forma confiável de tocar o vídeo é por IP RESIDENCIAL do usuário:
+  //    → top-level navigation (nova aba), VLC, ou colar a URL diretamente.
+  // Por isso, NÃO tentamos fetch blob por proxy → mostramos a tela de ação direta ao usuário.
   try {
-    setIsLoading(true);
-    const proxied = resolveStreamUrl(rawUrl, proxyOpts);
-    const res = await fetch(proxied, {
-      headers: { Accept: '*/*' },
-      credentials: 'omit',
-    });
-    if (!res.ok || !res.body) {
-      throw new Error(`HTTP ${res.status} ${res.statusText || ''}`);
-    }
-
-    const contentType = res.headers.get('Content-Type') || '';
-    // HLS: tenta jogar o body reescrito como blob no src
-    if (contentType.includes('mpegurl') || rawUrl.toLowerCase().includes('.m3u8')) {
-      const text = rewriteM3U8Uris(await res.text(), rawUrl, proxyOpts);
-      const blob = new Blob([text], { type: 'application/vnd.apple.mpegurl' });
-      const blobUrl = URL.createObjectURL(blob);
-      video.src = blobUrl;
-      video.addEventListener('loadedmetadata', () => setIsLoading(false), { once: true });
-      video.play().catch(() => {});
-      return;
-    }
-
-    // MP4 / AVI / MKV / etc: tenta src do blob primeiro se não der erro de memória.
-    // Usa resposta direta primeiro (stream via blob só se tamanho < 2GB — unsafe de outra forma)
-    // Usamos blob URL (não recomendado para +2GB; fallback src normal ainda é tentado antes)
-    const contentLen = parseInt(res.headers.get('Content-Length') || '0', 10);
-    if (contentLen > 0 && contentLen < 3 * 1024 * 1024 * 1024 /* <3GB */) {
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      video.src = blobUrl;
-      video.addEventListener('loadedmetadata', () => setIsLoading(false), { once: true });
-      video.play().catch(() => {});
-      return;
-    }
-    throw new Error('Arquivo muito grande para fetch client-side (>3GB)');
-  } catch (e) {
     setIsLoading(false);
-    const msg = e instanceof Error ? e.message : String(e);
-    setError(`Erro no stream (fallback): ${msg || 'desconhecido'}`);
+    setError(
+      'Não foi possível reproduzir dentro do app. Use uma das opções abaixo (abrir em nova aba, VLC ou copiar URL).'
+    );
+    return;
+  } catch {
+    setIsLoading(false);
+    setError('Erro ao carregar stream.');
   }
 }
 
@@ -231,6 +206,22 @@ export function useVideoPlayer(url: string): UseVideoPlayerReturn {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Helper: é um arquivo de vídeo DIRETO (não HLS)?
+  // MP4/TS/MKV/MOV etc — SABEMOS que passar por proxy trava erro 1003/403 por IP de DC.
+  // NÃO usamos proxy para esses → tentamos src direto primeiro.
+  function isDirectVideoFile(u: string): boolean {
+    const p = u.toLowerCase().split('?')[0];
+    return (
+      p.endsWith('.mp4') ||
+      p.endsWith('.mov') ||
+      p.endsWith('.mkv') ||
+      p.endsWith('.avi') ||
+      p.endsWith('.ts') ||
+      p.endsWith('.m4v') ||
+      p.endsWith('.webm')
+    );
+  }
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !url) return;
@@ -239,6 +230,7 @@ export function useVideoPlayer(url: string): UseVideoPlayerReturn {
     setError(null);
 
     const isHLS = url.includes('.m3u8') || url.includes('m3u8');
+    const directFile = isDirectVideoFile(url);
     const ProxiedHlsLoader = makeHlsLoader(proxyOpts);
 
     if (Hls.isSupported() && isHLS) {
@@ -263,8 +255,8 @@ export function useVideoPlayer(url: string): UseVideoPlayerReturn {
           const detail = data.details ?? '';
           setError(
             data.response?.code
-              ? `Erro no stream (HTTP ${data.response.code})`
-              : `Erro ao carregar o stream: ${detail}` || 'Erro ao carregar o stream'
+              ? `Erro no stream (HTTP ${data.response.code}). Use Abrir em Nova Aba / VLC.`
+              : `Erro ao carregar o stream: ${detail || 'desconhecido'}. Use Abrir em Nova Aba / VLC.`
           );
           setIsLoading(false);
         }
@@ -277,6 +269,7 @@ export function useVideoPlayer(url: string): UseVideoPlayerReturn {
         hlsRef.current = null;
       };
     } else if (video.canPlayType('application/vnd.apple.mpegurl') && isHLS) {
+      // HLS nativo (Safari/iOS): tenta o proxy primeiro
       video.src = resolveStreamUrl(url, proxyOpts);
       const onMeta = () => {
         setIsLoading(false);
@@ -290,7 +283,15 @@ export function useVideoPlayer(url: string): UseVideoPlayerReturn {
         video.removeEventListener('error', onErr);
       };
     } else {
-      video.src = resolveStreamUrl(url, proxyOpts);
+      // --- MP4 / MOV / MKV / etc ---
+      // TENTATIVA 1: src DIRETO (sem proxy nenhum).
+      // Motivo: IP residencial do usuário é o ÚNICO que não bloqueia.
+      // Desvantagem: pode dar Mixed Content em páginas HTTPS, mas muitos navegadores
+      // deixam passar ou pedem permissão. Se bloquear, cai no onErr e mostramos os botões.
+      video.src = directFile
+        ? url // SEM PROXY — arquivo de vídeo direto, usa IP do usuário
+        : resolveStreamUrl(url, proxyOpts); // outros tipos: tenta proxy por via das dúvidas
+
       const onMeta = () => {
         setIsLoading(false);
         video.play().catch(() => {});
