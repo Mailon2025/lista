@@ -253,11 +253,13 @@ export function setCachedPlaylist(url: string, data: ParsedPlaylist) {
   } catch {}
 }
 
-const CORS_PROXIES = [
-  (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  (u: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  (u: string) => `https://corsproxy.github.io/?${encodeURIComponent(u)}`,
+const CORS_PROXIES: Array<(u: string) => string> = [
+  (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  (u) => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(u)}`,
+  (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  (u) => `https://corsproxy.github.io/?${encodeURIComponent(u)}`,
+  (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
 ];
 
 function needsProxy(url: string): boolean {
@@ -266,38 +268,116 @@ function needsProxy(url: string): boolean {
   return /^http:\/\//i.test(url);
 }
 
-async function fetchWithFallback(url: string): Promise<Response> {
+async function sniffM3UBody(response: Response): Promise<{ ok: boolean; content: string }> {
+  // Lê os primeiros 2KB pra detectar se é M3U valido (evita baixar 76MB de página HTML)
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const text = await response.text();
+    return { ok: text.trimStart().startsWith('#EXTM3U'), content: text };
+  }
+  let bytesDone = 0;
+  const parts: Uint8Array[] = [];
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  const MAX_PEEK = 4 * 1024;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      parts.push(value);
+      bytesDone += value.length;
+      if (bytesDone >= MAX_PEEK) {
+        const headText = decoder.decode(concatBytes(parts));
+        if (headText.trimStart().startsWith('#EXTM3U')) {
+          // Peek ok; lê resto da stream
+          const rest: Uint8Array[] = [];
+          while (true) {
+            const r = await reader.read();
+            if (r.done) break;
+            if (r.value) rest.push(r.value);
+          }
+          const all = new Uint8Array(sumLen([...parts, ...rest]));
+          let off = 0;
+          for (const b of [...parts, ...rest]) { all.set(b, off); off += b.length; }
+          const text = decoder.decode(all);
+          return { ok: true, content: text };
+        } else {
+          // Provavelmente HTML de erro (403 disfarçado)
+          reader.releaseLock();
+          try { response.body?.cancel(); } catch {}
+          return { ok: false, content: headText };
+        }
+      }
+    }
+  }
+  const all = new Uint8Array(sumLen(parts));
+  let off = 0;
+  for (const b of parts) { all.set(b, off); off += b.length; }
+  const text = decoder.decode(all);
+  return { ok: text.trimStart().startsWith('#EXTM3U'), content: text };
+}
+
+function sumLen(arr: Uint8Array[]): number {
+  let n = 0;
+  for (const a of arr) n += a.length;
+  return n;
+}
+function concatBytes(arr: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(sumLen(arr));
+  let off = 0;
+  for (const a of arr) { out.set(a, off); off += a.length; }
+  return out;
+}
+
+async function fetchWithFallback(url: string): Promise<string> {
+  // Tenta direto apenas se não precisar de proxy
   if (!needsProxy(url)) {
-    const res = await fetch(url);
-    if (res.ok) return res;
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const sniff = await sniffM3UBody(res.clone());
+        if (sniff.ok) return sniff.content;
+      }
+    } catch {}
   }
 
-  const attempts: Array<PromiseSettledResult<Response>> = [];
   for (const wrap of CORS_PROXIES) {
     try {
       const proxied = wrap(url);
       const res = await fetch(proxied);
-      if (res.ok && res.status !== 403 && res.status !== 429) return res;
-      attempts.push({ status: 'rejected', reason: new Error(`HTTP ${res.status}`) });
-    } catch (e) {
-      attempts.push({ status: 'rejected', reason: e as Error });
+      if (!res.ok || res.status === 403 || res.status === 429) continue;
+
+      // allorigins.win/get? retorna JSON { contents } — precisa decodificar
+      const contentType = res.headers.get('content-type') || '';
+      if (/\/json/i.test(contentType) || proxied.includes('allorigins.win/get?')) {
+        try {
+          const obj = await res.json() as any;
+          const contents: string = obj?.contents || obj?.data || '';
+          if (contents && contents.trimStart().startsWith('#EXTM3U')) return contents;
+          continue;
+        } catch {
+          continue;
+        }
+      }
+
+      const sniff = await sniffM3UBody(res);
+      if (sniff.ok) return sniff.content;
+    } catch {
+      continue;
     }
   }
 
   throw new Error(
-    `Nenhum proxy CORS respondeu. Tente novamente ou use uma URL HTTPS.`
+    'Provedor bloqueou proxies CORS (403 Forbidden). Tente usar uma URL HTTPS do provedor ou carregue a lista em localhost (HTTP) primeiro.'
   );
 }
 
 export async function fetchAndParseM3U(url: string): Promise<ParsedPlaylist> {
-  const response = await fetchWithFallback(url);
-  
-  const content = await response.text();
-  
+  const content = await fetchWithFallback(url);
+
   if (!content.includes('#EXTM3U')) {
     throw new Error('Invalid M3U format');
   }
-  
+
   const entries = parseM3U(content);
   return processM3UEntries(entries);
 }
