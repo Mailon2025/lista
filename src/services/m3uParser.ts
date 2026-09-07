@@ -254,11 +254,8 @@ export function setCachedPlaylist(url: string, data: ParsedPlaylist) {
 }
 
 const CORS_PROXIES: Array<(u: string) => string> = [
-  (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
   (u) => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(u)}`,
-  (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
   (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  (u) => `https://corsproxy.github.io/?${encodeURIComponent(u)}`,
   (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
 ];
 
@@ -341,6 +338,7 @@ interface FetchOptions {
 async function fetchWithFallback(url: string, opts: FetchOptions = {}): Promise<string> {
   const mustProxy = needsProxy(url);
   const extraHeaders = { Accept: '*/*', ...targetOriginHeaders(url) };
+  const workerSet = Boolean(opts.customWorkerUrl && opts.customWorkerUrl.trim());
 
   // 1) Direto (apenas se HTTP em HTTP, ou HTTPS em HTTPS)
   if (!mustProxy) {
@@ -353,11 +351,11 @@ async function fetchWithFallback(url: string, opts: FetchOptions = {}): Promise<
     } catch {}
   }
 
-  // 2) Worker customizado (PRIORIDADE MÁXIMA — tem UA VLC/Referer que burla o 403)
-  if (opts.customWorkerUrl) {
+  // 2) Worker customizado. SE TIVER SETADO, NÃO CAÍMOS EM PÚBLICOS (pioram o 403).
+  let workerFailed = false;
+  if (workerSet && opts.customWorkerUrl) {
     try {
       let base = opts.customWorkerUrl.trim();
-      if (!base) throw new Error('empty');
       if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
       const sep = base.includes('?') ? '&' : '?';
       const proxied = `${base}${sep}url=${encodeURIComponent(url)}`;
@@ -366,37 +364,52 @@ async function fetchWithFallback(url: string, opts: FetchOptions = {}): Promise<
         const sniff = await sniffM3UBody(res.clone());
         if (sniff.ok) return sniff.content;
       }
-    } catch {}
-  }
-
-  // 3) Cadeia de proxies públicos
-  for (const wrap of CORS_PROXIES) {
-    try {
-      const proxied = wrap(url);
-      const res = await fetch(proxied, { headers: extraHeaders });
-      if (!res.ok || res.status === 403 || res.status === 429) continue;
-
-      const contentType = res.headers.get('content-type') || '';
-      if (/\/json/i.test(contentType) || proxied.includes('allorigins.win/get?')) {
-        try {
-          const obj = await res.json() as any;
-          const contents: string = obj?.contents || obj?.data || '';
-          if (contents && contents.trimStart().startsWith('#EXTM3U')) return contents;
-          continue;
-        } catch {
-          continue;
-        }
-      }
-
-      const sniff = await sniffM3UBody(res);
-      if (sniff.ok) return sniff.content;
+      workerFailed = true;
     } catch {
-      continue;
+      workerFailed = true;
     }
   }
 
+  if (!workerSet) {
+    // 3) Cadeia de proxies públicos (SÓ SE NÃO TEM WORKER configurado)
+    for (const wrap of CORS_PROXIES) {
+      try {
+        const proxied = wrap(url);
+        const res = await fetch(proxied, { headers: extraHeaders });
+        if (!res.ok || res.status === 403 || res.status === 429) continue;
+
+        const contentType = res.headers.get('content-type') || '';
+        if (/\/json/i.test(contentType) || proxied.includes('allorigins.win/get?')) {
+          try {
+            const obj = await res.json() as any;
+            const contents: string = obj?.contents || obj?.data || '';
+            if (contents && contents.trimStart().startsWith('#EXTM3U')) return contents;
+            continue;
+          } catch {
+            continue;
+          }
+        }
+
+        const sniff = await sniffM3UBody(res);
+        if (sniff.ok) return sniff.content;
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  if (workerSet) {
+    throw new Error(
+      'Seu Cloudflare Worker não respondeu com uma lista M3U válida. Verifique:\n' +
+      '1) Se você fez deploy do arquivo iptv-cf-worker.js (e não o worker antigo).\n' +
+      '2) Se a URL está correta (ex: https://nome.workers.dev/) no Settings → Proxy CORS.\n' +
+      '3) Se não tem WAF/Rate limit no Cloudflare bloqueando.'
+    );
+  }
+
   throw new Error(
-    'Provedor bloqueou proxies CORS (403 Forbidden). Configure seu Cloudflare Worker em Configurações → Proxy CORS, ou use uma URL HTTPS, ou carregue a lista em localhost (HTTP) primeiro.'
+    'Provedor bloqueou TODOS os proxies públicos.\n' +
+    'Solução: abra Settings → Proxy CORS e configure SEU Cloudflare Worker (deploy do arquivo iptv-cf-worker.js na raiz do projeto). É a única forma 100% de não levar 403 do provedor.'
   );
 }
 

@@ -33,9 +33,8 @@ export function resolveStreamUrl(url: string, opts: ProxyOptions = {}): string {
 
   if (!needsStreamProxy(clean)) return clean;
 
-  if (opts.customWorkerUrl) {
+  if (opts.customWorkerUrl && opts.customWorkerUrl.trim()) {
     let base = opts.customWorkerUrl.trim();
-    if (!base) return clean;
     if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
     const sep = base.includes('?') ? '&' : '?';
     return `${base}${sep}url=${encodeURIComponent(clean)}`;
