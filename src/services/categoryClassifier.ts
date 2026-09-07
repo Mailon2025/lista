@@ -1,34 +1,32 @@
 import { SeriesInfo } from '@/types/playlist';
 
-const seriesKeywords = ['series', 'série', 'temporada', 'season', 'episode', 'episodio', 'episódio'];
-const seriesPattern = /s\d{1,2}e\d{1,2}|temporada\s*\d|season\s*\d|episod/i;
+const seriesGroupKeywords = ['series', 'série', 'séries', 'temporada', 'season', 'episode', 'episodio', 'episódio', 'seriados'];
+const movieGroupKeywords = ['filmes', 'movies', 'filme', 'movie', 'vod', 'cinema', 'lancamento', 'lançamentos', '4k'];
+const liveGroupKeywords = ['ao vivo', 'live', '24h', '24 horas', 'canal', 'tv aberta', 'aberto', 'esporte', 'esportes', 'noticias', 'notícias', 'radio', 'rádio'];
 
-const movieKeywords = ['filmes', 'movies', 'filme', 'movie', 'vod', 'cinema'];
-const moviePattern = /\(\d{4}\)|\[\d{4}\]/;
+function includesAny(haystack: string, needles: string[]): boolean {
+  for (let i = 0; i < needles.length; i++) {
+    if (haystack.indexOf(needles[i]) !== -1) return true;
+  }
+  return false;
+}
 
-const liveKeywords = ['ao vivo', 'live', '24h', '24 horas', 'canal', 'tv aberta', 'aberto'];
+const seriesNamePattern = /s\d{1,2}[eE]\d{1,2}|\d{1,2}x\d{1,3}/;
+const movieNamePattern = /\(\d{4}\)|\[\d{4}\]/;
 
 export function classifyContent(name: string, group?: string): 'live' | 'movie' | 'series' {
-  const nameLower = name.toLowerCase();
-  const groupLower = (group || '').toLowerCase();
-
-  // Check for series
-  if (
-    seriesKeywords.some(k => nameLower.includes(k) || groupLower.includes(k)) ||
-    seriesPattern.test(name)
-  ) {
-    return 'series';
+  // 1) Classificação por grupo (95% dos casos) — mais barato
+  if (group && group.length) {
+    const g = group.length > 80 ? group.toLowerCase() : group.toLocaleLowerCase();
+    if (includesAny(g, seriesGroupKeywords)) return 'series';
+    if (includesAny(g, movieGroupKeywords)) return 'movie';
+    if (includesAny(g, liveGroupKeywords)) return 'live';
   }
 
-  // Check for movies
-  if (
-    movieKeywords.some(k => groupLower.includes(k)) ||
-    moviePattern.test(name)
-  ) {
-    return 'movie';
-  }
-
-  // Default to live
+  // 2) Fallback por nome (regex caro, só roda se não classificou por grupo)
+  const n = name.toLocaleLowerCase();
+  if (seriesNamePattern.test(name) || includesAny(n, seriesGroupKeywords)) return 'series';
+  if (movieNamePattern.test(name) || includesAny(n, movieGroupKeywords)) return 'movie';
   return 'live';
 }
 

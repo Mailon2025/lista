@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { ParsedPlaylist, Channel, SeriesGroup } from '@/types/playlist';
-import { fetchAndParseM3U } from '@/services/m3uParser';
+import { fetchAndParseM3U, getCachedPlaylist, setCachedPlaylist } from '@/services/m3uParser';
 import { STORAGE_KEYS } from '@/types/settings';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 
@@ -24,7 +24,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
   const [playlistUrl, setPlaylistUrl] = useLocalStorage<string>(STORAGE_KEYS.PLAYLIST_URL, '');
   const [, setLastUpdated] = useLocalStorage<number | null>(STORAGE_KEYS.LAST_UPDATED, null);
 
-  const loadPlaylist = useCallback(async (url: string) => {
+  const loadPlaylist = useCallback(async (url: string, options?: { forceFresh?: boolean }) => {
     if (!url) {
       setError('URL da playlist não fornecida');
       return;
@@ -34,13 +34,41 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     try {
+      if (!options?.forceFresh) {
+        const cached = getCachedPlaylist(url);
+        if (cached && Array.isArray(cached.channels) && cached.channels.length) {
+          setPlaylist(cached);
+          setPlaylistUrl(url);
+          setLastUpdated(Date.now());
+          setIsLoading(false);
+          // background refresh para lista não ficar obsoleta
+          fetchAndParseM3U(url)
+            .then(fresh => {
+              setCachedPlaylist(url, fresh);
+              setPlaylist(fresh);
+              setLastUpdated(Date.now());
+            })
+            .catch(() => {});
+          return;
+        }
+      }
+
       const parsedPlaylist = await fetchAndParseM3U(url);
+      setCachedPlaylist(url, parsedPlaylist);
       setPlaylist(parsedPlaylist);
       setPlaylistUrl(url);
       setLastUpdated(Date.now());
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao carregar playlist';
-      setError(message);
+      const cached = !options?.forceFresh ? getCachedPlaylist(url) : null;
+      if (cached && Array.isArray(cached.channels) && cached.channels.length) {
+        setPlaylist(cached);
+        setPlaylistUrl(url);
+        setLastUpdated(Date.now());
+        setError('Usando dados em cache (servidor indisponível)');
+      } else {
+        const message = err instanceof Error ? err.message : 'Erro ao carregar playlist';
+        setError(message);
+      }
     } finally {
       setIsLoading(false);
     }
