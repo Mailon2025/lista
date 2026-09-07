@@ -9,7 +9,7 @@ interface PlaylistContextType {
   isLoading: boolean;
   error: string | null;
   playlistUrl: string;
-  loadPlaylist: (url: string) => Promise<void>;
+  loadPlaylist: (url: string, options?: { forceFresh?: boolean; customWorkerUrlOverride?: string }) => Promise<void>;
   refreshPlaylist: () => Promise<void>;
   getChannelById: (id: string) => Channel | undefined;
   getSeriesByName: (name: string) => SeriesGroup | undefined;
@@ -25,7 +25,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
   const [customWorkerUrl] = useLocalStorage<string>(STORAGE_KEYS.CUSTOM_WORKER_URL, '');
   const [, setLastUpdated] = useLocalStorage<number | null>(STORAGE_KEYS.LAST_UPDATED, null);
 
-  const loadPlaylist = useCallback(async (url: string, options?: { forceFresh?: boolean }) => {
+  const loadPlaylist = useCallback(async (url: string, options?: { forceFresh?: boolean; customWorkerUrlOverride?: string }) => {
     if (!url) {
       setError('URL da playlist não fornecida');
       return;
@@ -34,7 +34,8 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
 
-    const fetchOpts = { customWorkerUrl: customWorkerUrl || undefined };
+    const resolvedWorker = options?.customWorkerUrlOverride?.trim() || customWorkerUrl || undefined;
+    const fetchOpts = { customWorkerUrl: resolvedWorker };
 
     try {
       if (!options?.forceFresh) {

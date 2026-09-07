@@ -1,43 +1,49 @@
 import { useState, useEffect } from 'react';
-import { Play, Loader2, Lightbulb, Settings, Link as LinkIcon } from 'lucide-react';
+import { Play, Loader2, Lightbulb, Settings, Link as LinkIcon, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { usePlaylist } from '@/contexts/PlaylistContext';
+import { useSettings } from '@/contexts/SettingsContext';
 import { useToast } from '@/hooks/use-toast';
 
 export function OnboardingScreen() {
   const { loadPlaylist, isLoading, playlistUrl: savedPlaylistUrl } = usePlaylist();
+  const { settings, updateCustomWorkerUrl } = useSettings();
   const { toast } = useToast();
   
   const [mode, setMode] = useState<'connect' | 'configure'>(savedPlaylistUrl ? 'connect' : 'configure');
   const [playlistUrl, setPlaylistUrl] = useState(savedPlaylistUrl || '');
   const [epgUrl, setEpgUrl] = useState('');
+  const [customWorkerUrl, setCustomWorkerUrl] = useState(settings.customWorkerUrl || '');
 
   // Update local state if saved url changes (unlikely here but good practice)
   useEffect(() => {
     if (savedPlaylistUrl) {
       setPlaylistUrl(savedPlaylistUrl);
-      if (mode === 'configure' && !playlistUrl) {
-          // If we are in configure mode but have no url typed, and a saved one appears, use it? 
-          // Actually, let's just respect the saved one for initialization.
-      }
     }
   }, [savedPlaylistUrl]);
+
+  useEffect(() => {
+    setCustomWorkerUrl(settings.customWorkerUrl || '');
+  }, [settings.customWorkerUrl]);
+
+  const workerTrim = customWorkerUrl.trim();
 
   const handleConnect = async () => {
     if (!savedPlaylistUrl) return;
     
     try {
-      await loadPlaylist(savedPlaylistUrl);
+      updateCustomWorkerUrl(workerTrim);
+      await loadPlaylist(savedPlaylistUrl, { customWorkerUrlOverride: workerTrim });
       toast({
         title: 'Sucesso!',
         description: 'Sua lista foi carregada com sucesso.',
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Erro ao carregar lista',
-        description: 'Verifique a conexão e tente novamente.',
+        description: error?.message || 'Verifique a conexão e tente novamente.',
         variant: 'destructive',
       });
     }
@@ -56,15 +62,16 @@ export function OnboardingScreen() {
     }
 
     try {
-      await loadPlaylist(playlistUrl.trim());
+      updateCustomWorkerUrl(workerTrim);
+      await loadPlaylist(playlistUrl.trim(), { customWorkerUrlOverride: workerTrim });
       toast({
         title: 'Sucesso!',
         description: 'Sua lista foi carregada com sucesso.',
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Erro ao carregar lista',
-        description: 'Verifique a URL e tente novamente.',
+        description: error?.message || 'Verifique a URL e tente novamente.',
         variant: 'destructive',
       });
     }
@@ -102,6 +109,29 @@ export function OnboardingScreen() {
                   <p className="text-sm text-muted-foreground truncate flex-1">
                     {savedPlaylistUrl}
                   </p>
+               </div>
+
+               <div className="space-y-2">
+                 <Label htmlFor="worker-url-connect">
+                   Proxy CORS (Cloudflare Worker)
+                 </Label>
+                 <div className="flex gap-2 items-start">
+                   <div className="relative flex-1">
+                     <Globe className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                     <Input
+                       id="worker-url-connect"
+                       type="url"
+                       placeholder="https://seu-worker.workers.dev/"
+                       value={customWorkerUrl}
+                       onChange={(e) => setCustomWorkerUrl(e.target.value)}
+                       className="bg-secondary border-border pl-9"
+                     />
+                   </div>
+                 </div>
+                 <p className="text-xs text-destructive">
+                   Obrigatório para provedores HTTP (como p1fast.com) rodando em
+                   GitHub Pages (HTTPS).
+                 </p>
                </div>
             </div>
 
@@ -144,6 +174,27 @@ export function OnboardingScreen() {
                   onChange={(e) => setPlaylistUrl(e.target.value)}
                   className="bg-secondary border-border"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="worker-url">
+                  Proxy CORS (Cloudflare Worker)
+                </Label>
+                <div className="relative">
+                  <Globe className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Input
+                    id="worker-url"
+                    type="url"
+                    placeholder="https://seu-worker.workers.dev/"
+                    value={customWorkerUrl}
+                    onChange={(e) => setCustomWorkerUrl(e.target.value)}
+                    className="bg-secondary border-border pl-9"
+                  />
+                </div>
+                <p className="text-xs text-destructive">
+                  Obrigatório para provedores HTTP (como p1fast.com) em GitHub
+                  Pages. Ex: <span className="font-mono">https://lista.maylonsuden4.workers.dev/</span>
+                </p>
               </div>
 
               <div className="space-y-2">
