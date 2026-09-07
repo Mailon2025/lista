@@ -6,6 +6,7 @@ interface SettingsContextType {
   settings: Settings;
   updatePlaylistUrl: (url: string) => void;
   updateEpgUrl: (url: string) => void;
+  updateCustomWorkerUrl: (url: string) => void;
   updateLastUpdated: (timestamp: number) => void;
 }
 
@@ -14,6 +15,7 @@ const SettingsContext = createContext<SettingsContextType | null>(null);
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [playlistUrl, setPlaylistUrl] = useLocalStorage<string>(STORAGE_KEYS.PLAYLIST_URL, '');
   const [epgUrl, setEpgUrl] = useLocalStorage<string>(STORAGE_KEYS.EPG_URL, '');
+  const [customWorkerUrl, setCustomWorkerUrl] = useLocalStorage<string>(STORAGE_KEYS.CUSTOM_WORKER_URL, '');
   const [parentalEnabled] = useLocalStorage<boolean>(STORAGE_KEYS.PARENTAL_ENABLED, false);
   const [parentalPin] = useLocalStorage<string>(STORAGE_KEYS.PARENTAL_PIN, DEFAULT_PIN);
   const [lastUpdated, setLastUpdated] = useLocalStorage<number | null>(STORAGE_KEYS.LAST_UPDATED, null);
@@ -21,6 +23,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const settings: Settings = {
     playlistUrl,
     epgUrl,
+    customWorkerUrl,
     parentalEnabled,
     parentalPin,
     lastUpdated,
@@ -34,6 +37,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setEpgUrl(url);
   }, [setEpgUrl]);
 
+  const updateCustomWorkerUrl = useCallback((url: string) => {
+    setCustomWorkerUrl(url);
+  }, [setCustomWorkerUrl]);
+
   const updateLastUpdated = useCallback((timestamp: number) => {
     setLastUpdated(timestamp);
   }, [setLastUpdated]);
@@ -44,6 +51,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         settings,
         updatePlaylistUrl,
         updateEpgUrl,
+        updateCustomWorkerUrl,
         updateLastUpdated,
       }}
     >

@@ -22,6 +22,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [playlistUrl, setPlaylistUrl] = useLocalStorage<string>(STORAGE_KEYS.PLAYLIST_URL, '');
+  const [customWorkerUrl] = useLocalStorage<string>(STORAGE_KEYS.CUSTOM_WORKER_URL, '');
   const [, setLastUpdated] = useLocalStorage<number | null>(STORAGE_KEYS.LAST_UPDATED, null);
 
   const loadPlaylist = useCallback(async (url: string, options?: { forceFresh?: boolean }) => {
@@ -33,6 +34,8 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
 
+    const fetchOpts = { customWorkerUrl: customWorkerUrl || undefined };
+
     try {
       if (!options?.forceFresh) {
         const cached = getCachedPlaylist(url);
@@ -41,8 +44,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
           setPlaylistUrl(url);
           setLastUpdated(Date.now());
           setIsLoading(false);
-          // background refresh para lista não ficar obsoleta
-          fetchAndParseM3U(url)
+          fetchAndParseM3U(url, fetchOpts)
             .then(fresh => {
               setCachedPlaylist(url, fresh);
               setPlaylist(fresh);
@@ -53,7 +55,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const parsedPlaylist = await fetchAndParseM3U(url);
+      const parsedPlaylist = await fetchAndParseM3U(url, fetchOpts);
       setCachedPlaylist(url, parsedPlaylist);
       setPlaylist(parsedPlaylist);
       setPlaylistUrl(url);
@@ -72,7 +74,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [setPlaylistUrl, setLastUpdated]);
+  }, [setPlaylistUrl, setLastUpdated, customWorkerUrl]);
 
   const refreshPlaylist = useCallback(async () => {
     if (playlistUrl) {

@@ -268,8 +268,16 @@ function needsProxy(url: string): boolean {
   return /^http:\/\//i.test(url);
 }
 
+function targetOriginHeaders(target: string) {
+  try {
+    const u = new URL(target);
+    return { Referer: u.origin + '/', Origin: u.origin };
+  } catch {
+    return {};
+  }
+}
+
 async function sniffM3UBody(response: Response): Promise<{ ok: boolean; content: string }> {
-  // Lê os primeiros 2KB pra detectar se é M3U valido (evita baixar 76MB de página HTML)
   const reader = response.body?.getReader();
   if (!reader) {
     const text = await response.text();
@@ -288,7 +296,6 @@ async function sniffM3UBody(response: Response): Promise<{ ok: boolean; content:
       if (bytesDone >= MAX_PEEK) {
         const headText = decoder.decode(concatBytes(parts));
         if (headText.trimStart().startsWith('#EXTM3U')) {
-          // Peek ok; lê resto da stream
           const rest: Uint8Array[] = [];
           while (true) {
             const r = await reader.read();
@@ -301,7 +308,6 @@ async function sniffM3UBody(response: Response): Promise<{ ok: boolean; content:
           const text = decoder.decode(all);
           return { ok: true, content: text };
         } else {
-          // Provavelmente HTML de erro (403 disfarçado)
           reader.releaseLock();
           try { response.body?.cancel(); } catch {}
           return { ok: false, content: headText };
@@ -328,11 +334,18 @@ function concatBytes(arr: Uint8Array[]): Uint8Array {
   return out;
 }
 
-async function fetchWithFallback(url: string): Promise<string> {
-  // Tenta direto apenas se não precisar de proxy
-  if (!needsProxy(url)) {
+interface FetchOptions {
+  customWorkerUrl?: string;
+}
+
+async function fetchWithFallback(url: string, opts: FetchOptions = {}): Promise<string> {
+  const mustProxy = needsProxy(url);
+  const extraHeaders = { Accept: '*/*', ...targetOriginHeaders(url) };
+
+  // 1) Direto (apenas se HTTP em HTTP, ou HTTPS em HTTPS)
+  if (!mustProxy) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: extraHeaders });
       if (res.ok) {
         const sniff = await sniffM3UBody(res.clone());
         if (sniff.ok) return sniff.content;
@@ -340,13 +353,29 @@ async function fetchWithFallback(url: string): Promise<string> {
     } catch {}
   }
 
+  // 2) Worker customizado (PRIORIDADE MÁXIMA — tem UA VLC/Referer que burla o 403)
+  if (opts.customWorkerUrl) {
+    try {
+      let base = opts.customWorkerUrl.trim();
+      if (!base) throw new Error('empty');
+      if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
+      const sep = base.includes('?') ? '&' : '?';
+      const proxied = `${base}${sep}url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxied, { headers: extraHeaders });
+      if (res.ok) {
+        const sniff = await sniffM3UBody(res.clone());
+        if (sniff.ok) return sniff.content;
+      }
+    } catch {}
+  }
+
+  // 3) Cadeia de proxies públicos
   for (const wrap of CORS_PROXIES) {
     try {
       const proxied = wrap(url);
-      const res = await fetch(proxied);
+      const res = await fetch(proxied, { headers: extraHeaders });
       if (!res.ok || res.status === 403 || res.status === 429) continue;
 
-      // allorigins.win/get? retorna JSON { contents } — precisa decodificar
       const contentType = res.headers.get('content-type') || '';
       if (/\/json/i.test(contentType) || proxied.includes('allorigins.win/get?')) {
         try {
@@ -367,12 +396,12 @@ async function fetchWithFallback(url: string): Promise<string> {
   }
 
   throw new Error(
-    'Provedor bloqueou proxies CORS (403 Forbidden). Tente usar uma URL HTTPS do provedor ou carregue a lista em localhost (HTTP) primeiro.'
+    'Provedor bloqueou proxies CORS (403 Forbidden). Configure seu Cloudflare Worker em Configurações → Proxy CORS, ou use uma URL HTTPS, ou carregue a lista em localhost (HTTP) primeiro.'
   );
 }
 
-export async function fetchAndParseM3U(url: string): Promise<ParsedPlaylist> {
-  const content = await fetchWithFallback(url);
+export async function fetchAndParseM3U(url: string, opts?: FetchOptions): Promise<ParsedPlaylist> {
+  const content = await fetchWithFallback(url, opts);
 
   if (!content.includes('#EXTM3U')) {
     throw new Error('Invalid M3U format');

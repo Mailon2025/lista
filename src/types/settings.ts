@@ -1,6 +1,7 @@
 export interface Settings {
   playlistUrl: string;
   epgUrl: string;
+  customWorkerUrl: string;
   parentalEnabled: boolean;
   parentalPin: string;
   lastUpdated: number | null;
@@ -15,6 +16,7 @@ export interface PlaylistInfo {
 export const STORAGE_KEYS = {
   PLAYLIST_URL: 'streamplay_playlist_url',
   EPG_URL: 'streamplay_epg_url',
+  CUSTOM_WORKER_URL: 'streamplay_custom_worker_url',
   PARENTAL_PIN: 'streamplay_parental_pin',
   PARENTAL_ENABLED: 'streamplay_parental_enabled',
   FAVORITES: 'streamplay_favorites',

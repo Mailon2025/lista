@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { List, Calendar, Shield, Info, Loader2, RefreshCw } from 'lucide-react';
+import { List, Calendar, Shield, Info, Loader2, RefreshCw, Cloud } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,7 +18,7 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { playlist, isLoading, loadPlaylist, playlistUrl } = usePlaylist();
-  const { settings, updateEpgUrl } = useSettings();
+  const { settings, updateEpgUrl, updateCustomWorkerUrl } = useSettings();
   const {
     isParentalEnabled,
     enableParental,
@@ -30,6 +30,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const [playlistInput, setPlaylistInput] = useState(playlistUrl);
   const [epgInput, setEpgInput] = useState(settings.epgUrl);
+  const [workerInput, setWorkerInput] = useState(settings.customWorkerUrl);
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -65,6 +66,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     toast({
       title: 'Sucesso',
       description: 'URL do EPG atualizada!',
+    });
+  };
+
+  const handleUpdateWorker = () => {
+    updateCustomWorkerUrl(workerInput.trim());
+    toast({
+      title: 'Sucesso',
+      description: workerInput.trim()
+        ? 'Proxy custom configurado! Recarregue a lista.'
+        : 'Proxy custom removido (usará proxies públicos).',
     });
   };
 
@@ -191,6 +202,41 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
             <Button onClick={handleUpdateEpg} variant="outline" className="w-full">
               Atualizar EPG
+            </Button>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Custom Proxy Worker */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Cloud className="w-5 h-5 text-primary" />
+            <h3 className="text-lg font-semibold">Proxy CORS (Cloudflare Worker)</h3>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="worker-url">
+                URL do Worker{' '}
+                <span className="text-muted-foreground text-xs">
+                  (recomendado para evitar bloqueio 403)
+                </span>
+              </Label>
+              <Input
+                id="worker-url"
+                type="url"
+                placeholder="https://seu-worker.workers.dev/"
+                value={workerInput}
+                onChange={(e) => setWorkerInput(e.target.value)}
+                className="mt-1 font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Endpoint deve aceitar <code>?url=http://...</code>. Deixe vazio para usar
+                proxies públicos (podem ser bloqueados).
+              </p>
+            </div>
+            <Button onClick={handleUpdateWorker} variant="outline" className="w-full">
+              Salvar Worker
             </Button>
           </div>
         </section>
