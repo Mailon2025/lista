@@ -89,7 +89,7 @@
     @apply text-foreground antialiased;
     font-family: var(--font-family);
     background-color: hsl(var(--background));
-    background-image: url('./cadene-bg.jpg');
+    background-image: url('../cadene-bg.jpg');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;

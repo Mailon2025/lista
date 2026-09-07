@@ -179,23 +179,44 @@ export function processM3UEntries(entries: M3UEntry[]): ParsedPlaylist {
   };
 }
 
-function resolveFetchUrl(url: string): string {
-  const isSecure =
-    typeof window !== 'undefined' && window.location.protocol === 'https:';
-  const targetIsHttp = /^http:\/\//i.test(url);
-  if (isSecure && targetIsHttp) {
-    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+const CORS_PROXIES = [
+  (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  (u: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  (u: string) => `https://corsproxy.github.io/?${encodeURIComponent(u)}`,
+];
+
+function needsProxy(url: string): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.location.protocol !== 'https:') return false;
+  return /^http:\/\//i.test(url);
+}
+
+async function fetchWithFallback(url: string): Promise<Response> {
+  if (!needsProxy(url)) {
+    const res = await fetch(url);
+    if (res.ok) return res;
   }
-  return url;
+
+  const attempts: Array<PromiseSettledResult<Response>> = [];
+  for (const wrap of CORS_PROXIES) {
+    try {
+      const proxied = wrap(url);
+      const res = await fetch(proxied);
+      if (res.ok && res.status !== 403 && res.status !== 429) return res;
+      attempts.push({ status: 'rejected', reason: new Error(`HTTP ${res.status}`) });
+    } catch (e) {
+      attempts.push({ status: 'rejected', reason: e as Error });
+    }
+  }
+
+  throw new Error(
+    `Nenhum proxy CORS respondeu. Tente novamente ou use uma URL HTTPS.`
+  );
 }
 
 export async function fetchAndParseM3U(url: string): Promise<ParsedPlaylist> {
-  const finalUrl = resolveFetchUrl(url);
-  const response = await fetch(finalUrl);
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch playlist: ${response.status}`);
-  }
+  const response = await fetchWithFallback(url);
   
   const content = await response.text();
   
