@@ -1,0 +1,239 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Background */
+    --background: 0 0% 6%;
+    --background-secondary: 0 0% 10%;
+    --background-tertiary: 0 0% 14%;
+    --foreground: 0 0% 100%;
+
+    /* Card */
+    --card: 0 0% 12%;
+    --card-hover: 0 0% 17%;
+    --card-foreground: 0 0% 100%;
+
+    /* Popover */
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 100%;
+
+    /* Primary - Vermelho Netflix */
+    --primary: 357 91% 47%;
+    --primary-foreground: 0 0% 100%;
+    --primary-gradient-start: 357 91% 47%;
+    --primary-gradient-end: 357 91% 37%;
+
+    /* Secondary */
+    --secondary: 0 0% 17%;
+    --secondary-foreground: 0 0% 100%;
+
+    /* Muted */
+    --muted: 0 0% 17%;
+    --muted-foreground: 0 0% 70%;
+
+    /* Accent */
+    --accent: 0 0% 17%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Status */
+    --success: 145 63% 55%;
+    --warning: 37 91% 55%;
+    --error: 357 91% 47%;
+
+    /* Border */
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 357 91% 47%;
+
+    /* Radius */
+    --radius: 0.5rem;
+
+    /* Text colors */
+    --text-primary: 0 0% 100%;
+    --text-secondary: 0 0% 70%;
+    --text-muted: 0 0% 40%;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 8%;
+    --sidebar-foreground: 0 0% 70%;
+    --sidebar-primary: 357 91% 47%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 357 91% 47%;
+
+    /* Font */
+    --font-family: 'Outfit', sans-serif;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: var(--font-family);
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-family);
+  }
+
+  /* Focus visible for accessibility */
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
+}
+
+@layer components {
+  /* Primary gradient button */
+  .btn-primary-gradient {
+    @apply text-primary-foreground font-semibold px-6 py-3 rounded transition-all duration-200 ease-out;
+    background: linear-gradient(135deg, hsl(var(--primary-gradient-start)) 0%, hsl(var(--primary-gradient-end)) 100%);
+  }
+
+  .btn-primary-gradient:hover {
+    @apply -translate-y-0.5;
+    box-shadow: 0 4px 12px hsla(var(--primary), 0.4);
+  }
+
+  /* Content card styles */
+  .content-card {
+    @apply bg-card rounded-lg overflow-hidden cursor-pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .content-card:hover {
+    @apply scale-105 bg-card-hover;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Category card for home */
+  .category-card {
+    @apply bg-card rounded-xl p-6 cursor-pointer flex flex-col items-center justify-center gap-3 min-h-[180px] md:min-h-[200px];
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .category-card:hover {
+    @apply scale-105 bg-card-hover;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Badge/Pill styles */
+  .category-pill {
+    @apply px-4 py-2 rounded-full text-sm font-medium transition-all duration-200;
+    @apply bg-secondary text-secondary-foreground;
+  }
+
+  .category-pill.active {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  .category-pill:hover:not(.active) {
+    @apply bg-card-hover;
+  }
+
+  /* Player overlay fade */
+  .player-overlay {
+    @apply absolute inset-0 flex flex-col justify-between;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.7) 0%,
+      transparent 30%,
+      transparent 70%,
+      rgba(0, 0, 0, 0.9) 100%
+    );
+  }
+
+  /* Skeleton loading */
+  .skeleton {
+    @apply bg-secondary animate-pulse rounded;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background-secondary;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground;
+  }
+
+  /* PIN input styles */
+  .pin-input {
+    @apply w-12 h-14 text-center text-2xl font-bold bg-secondary border-2 border-border rounded-lg;
+    @apply focus:border-primary focus:ring-2 focus:ring-primary/20;
+  }
+
+  /* Modal backdrop */
+  .modal-backdrop {
+    @apply fixed inset-0 bg-black/80 backdrop-blur-sm;
+  }
+
+  /* Section title */
+  .section-title {
+    @apply text-xl font-semibold text-foreground mb-4 flex items-center gap-2;
+  }
+}
+
+@layer utilities {
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-gradient-end)) 100%);
+  }
+
+  /* Line clamp utilities */
+  .line-clamp-1 {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Aspect ratios */
+  .aspect-poster {
+    aspect-ratio: 2/3;
+  }
+
+  .aspect-video-wide {
+    aspect-ratio: 16/9;
+  }
+}
