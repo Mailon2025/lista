@@ -179,8 +179,19 @@ export function processM3UEntries(entries: M3UEntry[]): ParsedPlaylist {
   };
 }
 
+function resolveFetchUrl(url: string): string {
+  const isSecure =
+    typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const targetIsHttp = /^http:\/\//i.test(url);
+  if (isSecure && targetIsHttp) {
+    return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
 export async function fetchAndParseM3U(url: string): Promise<ParsedPlaylist> {
-  const response = await fetch(url);
+  const finalUrl = resolveFetchUrl(url);
+  const response = await fetch(finalUrl);
   
   if (!response.ok) {
     throw new Error(`Failed to fetch playlist: ${response.status}`);
