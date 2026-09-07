@@ -14,6 +14,8 @@ export default {
     const upstreamHeaders = new Headers();
     const range = request.headers.get("Range");
     if (range) upstreamHeaders.set("Range", range);
+    // Muitos painéis IPTV bloqueiam pedidos sem um User-Agent de player reconhecido
+    upstreamHeaders.set("User-Agent", "VLC/3.0.20 LibVLC/3.0.20");
 
     let upstream;
     try {
