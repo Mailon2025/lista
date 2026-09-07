@@ -197,7 +197,13 @@
 <div class="modal-bg" id="settings-modal">
   <div class="modal">
     <h2>Configurações da playlist</h2>
-    <label>URL da lista M3U</label>
+    <label>URL do Supabase (recomendado — rápido mesmo com listas grandes)</label>
+    <input type="text" id="supabase-url" placeholder="https://xxxxx.supabase.co">
+    <label>Chave anon do Supabase</label>
+    <input type="text" id="supabase-key" placeholder="eyJhbGciOi...">
+    <div class="hint">Preenchendo os dois campos acima, o app busca direto do banco (rápido). Deixe os dois em branco pra usar o modo antigo (lista M3U direta, mais lento em listas grandes).</div>
+
+    <label>URL da lista M3U (modo antigo, opcional se usar Supabase)</label>
     <input type="text" id="m3u-url" placeholder="http://.../lista.m3u">
     <label>URL do EPG (opcional, formato XMLTV .xml ou .xml.gz)</label>
     <input type="text" id="epg-url" placeholder="http://.../epg.xml.gz">
@@ -229,6 +235,8 @@
   var STORE_KEY_EPG_URL = "iptv_epg_url";
   var STORE_KEY_EPG_RAW = "iptv_epg_raw_cache";
   var STORE_KEY_PROXY = "iptv_proxy_url";
+  var STORE_KEY_SB_URL = "iptv_supabase_url";
+  var STORE_KEY_SB_KEY = "iptv_supabase_key";
 
   var state = {
     items: [],            // flat parsed list
@@ -417,6 +425,66 @@
     return null;
   }
 
+  // ---------------- Supabase (modo rápido) ----------------
+  function getSavedSbUrl(){ return (localStorage.getItem(STORE_KEY_SB_URL) || "").replace(/\/$/, ""); }
+  function getSavedSbKey(){ return localStorage.getItem(STORE_KEY_SB_KEY) || ""; }
+  function setSavedSb(url, key){
+    localStorage.setItem(STORE_KEY_SB_URL, url);
+    localStorage.setItem(STORE_KEY_SB_KEY, key);
+  }
+  function usingSupabase(){ return !!(getSavedSbUrl() && getSavedSbKey()); }
+
+  function sbHeaders(){
+    var key = getSavedSbKey();
+    return { "apikey": key, "Authorization": "Bearer " + key };
+  }
+
+  function sbGetGroups(category){
+    return fetch(getSavedSbUrl() + "/rest/v1/rpc/get_groups", {
+      method: "POST",
+      headers: Object.assign({ "Content-Type":"application/json" }, sbHeaders()),
+      body: JSON.stringify({ p_category: category })
+    }).then(function(r){
+      if(!r.ok) throw new Error("Supabase HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  function sbGetItems(category, groupName){
+    var url = getSavedSbUrl() + "/rest/v1/channels?category=eq." + encodeURIComponent(category) +
+      "&group_name=eq." + encodeURIComponent(groupName) +
+      "&select=id,title,group_name,tvg_id,logo,url&order=title";
+    return fetch(url, { headers: sbHeaders() }).then(function(r){
+      if(!r.ok) throw new Error("Supabase HTTP " + r.status);
+      return r.json();
+    }).then(mapSbRows);
+  }
+
+  function sbSearch(term){
+    var url = getSavedSbUrl() + "/rest/v1/channels?title=ilike.*" + encodeURIComponent(term) +
+      "*&select=id,title,group_name,tvg_id,logo,url&limit=200";
+    return fetch(url, { headers: sbHeaders() }).then(function(r){
+      if(!r.ok) throw new Error("Supabase HTTP " + r.status);
+      return r.json();
+    }).then(mapSbRows);
+  }
+
+  function sbGetByIds(ids){
+    if(ids.length === 0) return Promise.resolve([]);
+    var url = getSavedSbUrl() + "/rest/v1/channels?id=in.(" + ids.map(encodeURIComponent).join(",") + ")" +
+      "&select=id,title,group_name,tvg_id,logo,url";
+    return fetch(url, { headers: sbHeaders() }).then(function(r){
+      if(!r.ok) throw new Error("Supabase HTTP " + r.status);
+      return r.json();
+    }).then(mapSbRows);
+  }
+
+  function mapSbRows(rows){
+    return rows.map(function(row){
+      return { id:row.id, title:row.title, group:row.group_name, tvgId:row.tvg_id||"", logo:row.logo||"", url:row.url };
+    });
+  }
+
   // ---------------- Loading ----------------
   function getSavedUrl(){ return localStorage.getItem(STORE_KEY_URL) || ""; }
   function setSavedUrl(u){ localStorage.setItem(STORE_KEY_URL, u); }
@@ -480,24 +548,95 @@
   }
 
   function renderCurrentView(){
-    var query = document.getElementById("search-input").value.trim().toLowerCase();
+    var query = document.getElementById("search-input").value.trim();
 
     if(query){
-      renderSearchResults(query);
+      if(usingSupabase()){
+        showState("loading", "Buscando...", "");
+        sbSearch(query).then(function(items){ renderSearchResultsList(items, query); })
+          .catch(function(){ showState("error", "Erro ao buscar.", "Verifique a URL/chave do Supabase em ⚙."); });
+      } else {
+        renderSearchResults(query.toLowerCase());
+      }
       return;
     }
 
     if(state.currentTab === "favoritos"){
-      renderFavorites();
+      if(usingSupabase()){
+        showState("loading", "Carregando favoritos...", "");
+        sbGetByIds(state.favs).then(renderFavoritesList)
+          .catch(function(){ showState("error", "Erro ao carregar favoritos.", ""); });
+      } else {
+        renderFavorites();
+      }
       return;
     }
 
     if(state.currentGroup){
-      renderItemList(state.groups[state.currentTab][state.currentGroup] || [], state.currentGroup);
+      if(usingSupabase()){
+        showState("loading", "Carregando...", "");
+        sbGetItems(state.currentTab, state.currentGroup).then(function(items){
+          renderItemList(items, state.currentGroup);
+        }).catch(function(){ showState("error", "Erro ao carregar itens.", ""); });
+      } else {
+        renderItemList(state.groups[state.currentTab][state.currentGroup] || [], state.currentGroup);
+      }
       return;
     }
 
-    renderGroupList();
+    if(usingSupabase()){
+      showState("loading", "Carregando categorias...", "");
+      sbGetGroups(state.currentTab).then(renderGroupListFromRows)
+        .catch(function(){ showState("error", "Não consegui falar com o Supabase.", "Confira a URL e a chave anon nas configurações (⚙)."); });
+    } else {
+      renderGroupList();
+    }
+  }
+
+  function renderGroupListFromRows(rows){
+    if(!rows || rows.length === 0){
+      showState("empty", "Nada por aqui ainda.", "Sua lista pode não ter conteúdo categorizado como \""+labelForTab(state.currentTab)+"\", ou a sincronização ainda não rodou.");
+      return;
+    }
+    var html = '<div class="group-list">';
+    rows.forEach(function(row){
+      html += '<div class="group-row" data-group="'+escapeHtml(row.group_name)+'">' +
+        '<div><div class="name">'+escapeHtml(row.group_name)+'</div></div>' +
+        '<div style="display:flex; align-items:center; gap:8px;"><span class="count">'+row.item_count+'</span><span class="chev">›</span></div>' +
+        '</div>';
+    });
+    html += '</div>';
+    mainEl.innerHTML = html;
+    Array.prototype.forEach.call(mainEl.querySelectorAll(".group-row"), function(row){
+      row.addEventListener("click", function(){
+        state.currentGroup = row.getAttribute("data-group");
+        renderCurrentView();
+      });
+    });
+  }
+
+  function renderSearchResultsList(items, query){
+    if(items.length === 0){
+      showState("empty", "Nenhum resultado para \""+query+"\".", "Tente outro termo de busca.");
+      return;
+    }
+    var html = '<div class="item-list">';
+    items.forEach(function(it){ html += itemRowHtml(it, true); });
+    html += '</div>';
+    mainEl.innerHTML = html;
+    bindItemRows();
+  }
+
+  function renderFavoritesList(items){
+    if(items.length === 0){
+      showState("empty", "Nenhum favorito ainda.", "Toque na estrela de um título para adicioná-lo aqui.");
+      return;
+    }
+    var html = '<div class="item-list">';
+    items.forEach(function(it){ html += itemRowHtml(it, true); });
+    html += '</div>';
+    mainEl.innerHTML = html;
+    bindItemRows();
   }
 
   function renderGroupList(){
@@ -577,7 +716,7 @@
       var epgLine = "▸ " + current.title;
       sub = sub ? (sub + " · " + epgLine) : epgLine;
     }
-    return '<div class="item-row" data-id="'+it.id+'">' +
+    return '<div class="item-row" data-id="'+it.id+'" data-item=\''+escapeHtml(JSON.stringify(it)).replace(/'/g,'&#39;')+'\'>' +
       '<div class="item-thumb">'+thumb+'</div>' +
       '<div class="item-info"><div class="title">'+escapeHtml(it.title)+'</div>' +
         (sub ? '<div class="sub">'+escapeHtml(sub)+'</div>' : '') +
@@ -590,9 +729,10 @@
     Array.prototype.forEach.call(mainEl.querySelectorAll(".item-row"), function(row){
       row.addEventListener("click", function(e){
         if(e.target.classList.contains("fav-btn")) return;
-        var id = row.getAttribute("data-id");
-        var item = state.items.find(function(i){ return i.id === id; });
-        if(item) openPlayer(item);
+        try{
+          var item = JSON.parse(row.getAttribute("data-item"));
+          openPlayer(item);
+        }catch(e2){ /* ignora */ }
       });
     });
     Array.prototype.forEach.call(mainEl.querySelectorAll(".fav-btn"), function(btn){
@@ -629,6 +769,8 @@
     // Links de IPTV do tipo "output=ts" ou terminados em algo como ".ts" (com ou sem query string)
     // são MPEG-TS bruto, não HLS — precisam do mpegts.js, o <video> nativo não decodifica isso sozinho.
     var isTsSource = !isHlsSource && (/\.ts(\?|$)/i.test(item.url) || /[?&](output|type)=ts/i.test(item.url) || /\/live\//i.test(item.url));
+    // Arquivos de vídeo comuns (filmes/VOD) tocam direto no <video>, sem precisar de HLS nem mpegts.js.
+    var isDirectFile = !isHlsSource && !isTsSource && /\.(mp4|mkv|avi|mov|webm|m4v)(\?|$)/i.test(item.url);
 
     function fail(){
       playerMsg.style.display = "flex";
@@ -648,8 +790,12 @@
       player.load();
       player.play().catch(function(){});
       player.on(mpegts.Events.ERROR, fail);
+    } else if(isDirectFile){
+      video.src = url;
+      video.play().catch(function(){});
+      video.onerror = fail;
     } else if(window.Hls && Hls.isSupported()){
-      // fallback: tenta como HLS mesmo sem extensão .m3u8 (alguns painéis servem assim)
+      // fallback: tenta como HLS mesmo sem extensão .m3u8 (alguns painéis servem assim, sem ser arquivo direto)
       var hls2 = new Hls();
       state.hls = hls2;
       hls2.loadSource(url);
@@ -686,11 +832,17 @@
     });
   });
 
+  var searchDebounceTimer = null;
   document.getElementById("search-input").addEventListener("input", function(){
-    renderCurrentView();
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(renderCurrentView, usingSupabase() ? 350 : 0);
   });
 
   document.getElementById("refresh-btn").addEventListener("click", function(){
+    if(usingSupabase()){
+      renderCurrentView();
+      return;
+    }
     var url = getSavedUrl();
     if(url) loadFromUrl(url);
   });
@@ -698,6 +850,8 @@
   // ---------------- Settings modal ----------------
   var modal = document.getElementById("settings-modal");
   document.getElementById("settings-btn").addEventListener("click", function(){
+    document.getElementById("supabase-url").value = getSavedSbUrl();
+    document.getElementById("supabase-key").value = getSavedSbKey();
     document.getElementById("m3u-url").value = getSavedUrl();
     document.getElementById("epg-url").value = getSavedEpgUrl();
     document.getElementById("proxy-url").value = getSavedProxy();
@@ -711,6 +865,8 @@
     ta.style.display = ta.style.display === "none" ? "block" : "none";
   });
   document.getElementById("settings-save").addEventListener("click", function(){
+    var sbUrl = document.getElementById("supabase-url").value.trim();
+    var sbKey = document.getElementById("supabase-key").value.trim();
     var url = document.getElementById("m3u-url").value.trim();
     var epgUrl = document.getElementById("epg-url").value.trim();
     var proxyUrl = document.getElementById("proxy-url").value.trim();
@@ -718,7 +874,14 @@
     modal.classList.remove("open");
 
     setSavedProxy(proxyUrl);
+    setSavedSb(sbUrl, sbKey);
     if(epgUrl){ setSavedEpgUrl(epgUrl); loadEpgFromUrl(epgUrl); }
+
+    if(usingSupabase()){
+      state.currentGroup = null;
+      renderCurrentView();
+      return;
+    }
 
     if(pasted){
       try{ localStorage.setItem(STORE_KEY_RAW, pasted); }catch(e){ /* grande demais pro cache, tudo bem */ }
@@ -742,6 +905,11 @@
       if(cachedEpg) state.epg = parseXmltv(cachedEpg);
     }
 
+    if(usingSupabase()){
+      renderCurrentView();
+      return;
+    }
+
     var savedUrl = getSavedUrl();
     if(savedUrl){
       loadFromUrl(savedUrl);
@@ -750,7 +918,7 @@
       if(cached){
         applyM3U(cached);
       } else {
-        showState("empty", "Nenhuma lista configurada.", "Toque no ícone ⚙ no topo para adicionar a URL da sua playlist M3U.");
+        showState("empty", "Nenhuma lista configurada.", "Toque no ícone ⚙ no topo para configurar o Supabase ou colar a URL da sua playlist M3U.");
       }
     }
   }
