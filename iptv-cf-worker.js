@@ -43,6 +43,14 @@ export default {
       return plain(400, 'URL inválida passada em ?url=');
     }
 
+    // ---- Remove porta redundante :80/:443 (nginx do p1fast bloqueia Host com porta explícita -> erro 1003)
+    if (
+      (parsedTarget.protocol === 'http:' && parsedTarget.port === '80') ||
+      (parsedTarget.protocol === 'https:' && parsedTarget.port === '443')
+    ) {
+      parsedTarget.port = '';
+    }
+
     // Constrói headers do upstream
     const upstream = new Headers();
     const range = request.headers.get('Range');
@@ -55,6 +63,7 @@ export default {
       const origin = parsedTarget.origin;
       upstream.set('Referer', origin + '/');
       upstream.set('Origin', origin);
+      upstream.set('Host', parsedTarget.hostname);
     } catch {}
 
     const isPlaylist = looksLikeM3U8(parsedTarget.pathname, request.headers.get('Accept') || '');
@@ -173,7 +182,16 @@ function rewriteM3U8(body, baseUrl, workerBase) {
 }
 
 function resolveRef(ref, base) {
-  if (/^[a-zA-Z][a-zA-Z0-9+\-.]*:/.test(ref)) return ref;
-  try { return new URL(ref, base).toString(); } catch { return ref; }
+  try {
+    const u = /^[a-zA-Z][a-zA-Z0-9+\-.]*:/.test(ref) ? new URL(ref) : new URL(ref, base);
+    // Remove porta redundante (p1fast bloqueia Host: dominio:80 -> erro 1003)
+    if (
+      (u.protocol === 'http:' && u.port === '80') ||
+      (u.protocol === 'https:' && u.port === '443')
+    ) {
+      u.port = '';
+    }
+    return u.toString();
+  } catch { return ref; }
 }
 function escAttr(v) { return v.replace(/"/g, '%22'); }
