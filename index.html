@@ -392,7 +392,7 @@
         } else {
           text = new TextDecoder("utf-8").decode(buf);
         }
-        localStorage.setItem(STORE_KEY_EPG_RAW, text);
+        try{ localStorage.setItem(STORE_KEY_EPG_RAW, text); }catch(e){ /* epg grande demais pro cache, tudo bem */ }
         state.epg = parseXmltv(text);
         renderCurrentView();
       })
@@ -429,7 +429,7 @@
         return res.text();
       })
       .then(function(text){
-        localStorage.setItem(STORE_KEY_RAW, text);
+        try{ localStorage.setItem(STORE_KEY_RAW, text); }catch(e){ /* lista grande demais pro cache local, tudo bem, segue sem cache offline */ }
         applyM3U(text);
       })
       .catch(function(err){
@@ -721,7 +721,7 @@
     if(epgUrl){ setSavedEpgUrl(epgUrl); loadEpgFromUrl(epgUrl); }
 
     if(pasted){
-      localStorage.setItem(STORE_KEY_RAW, pasted);
+      try{ localStorage.setItem(STORE_KEY_RAW, pasted); }catch(e){ /* grande demais pro cache, tudo bem */ }
       if(url) setSavedUrl(url);
       applyM3U(pasted);
       return;
