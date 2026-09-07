@@ -86,8 +86,23 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply text-foreground antialiased;
     font-family: var(--font-family);
+    background-color: hsl(var(--background));
+    background-image: url('../cadene-bg.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.85);
+    z-index: -1;
+    pointer-events: none;
   }
 
   /* Focus visible for accessibility */

@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import { PlaylistProvider } from "@/contexts/PlaylistContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ParentalProvider } from "@/contexts/ParentalContext";
@@ -26,7 +26,7 @@ const App = () => (
             <FavoritesProvider>
               <Toaster />
               <Sonner />
-              <BrowserRouter>
+              <HashRouter>
                 <Routes>
                   <Route path="/" element={<HomeScreen />} />
                   <Route path="/live" element={<LiveTVPage />} />
@@ -36,7 +36,7 @@ const App = () => (
                   <Route path="/watch/:channelId" element={<WatchPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
-              </BrowserRouter>
+              </HashRouter>
             </FavoritesProvider>
           </ParentalProvider>
         </PlaylistProvider>

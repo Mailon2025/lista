@@ -12,7 +12,7 @@ export function MainLayout({ children, title, showBack }: MainLayoutProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen">
       <Header
         title={title}
         showBack={showBack}

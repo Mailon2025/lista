@@ -71,17 +71,23 @@ export function OnboardingScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo and welcome */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-primary animate-pulse-glow">
-              <Play className="w-8 h-8 text-primary-foreground fill-current" />
-            </div>
+            <img
+              src="./cadene-icon.png"
+              alt="Cadene"
+              className="w-16 h-16 rounded-2xl object-contain"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.outerHTML = `<div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-primary"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary-foreground fill-current"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg></div>`;
+              }}
+            />
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-2">
-            Bem-vindo ao <span className="text-gradient">StreamPlay</span>!
+            Bem-vindo ao <span className="text-gradient">Cadene Filmes e Series</span>!
           </h1>
           <p className="text-muted-foreground">
             {mode === 'connect' ? 'Sua lista está pronta para conectar' : 'Para começar, configure sua lista IPTV'}

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Settings, Play, ArrowLeft } from 'lucide-react';
+import { Settings, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface HeaderProps {
@@ -28,11 +28,16 @@ export function Header({ title, showBack = false, onSettingsClick }: HeaderProps
           )}
           
           <Link to="/" className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary">
-              <Play className="w-4 h-4 text-primary-foreground fill-current" />
-            </div>
+            <img
+              src="./cadene-icon.png"
+              alt="Cadene"
+              className="w-8 h-8 rounded-lg object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
             <span className="text-xl font-bold text-foreground">
-              {title || 'StreamPlay'}
+              {title || 'Cadene Filmes e Series'}
             </span>
           </Link>
         </div>
